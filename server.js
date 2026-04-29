@@ -1,6 +1,6 @@
 const express = require('express');
 const path = require('path');
-const { getDiskInfo, scan, browse, deleteItems } = require('./scanner');
+const { getDiskInfo, scan, browse, deleteItems, breakdown } = require('./scanner');
 
 const app = express();
 const PORT = 3456;
@@ -17,6 +17,8 @@ app.get('/api/browse', async (req, res) => {
   if (result.error) return res.status(400).json(result);
   res.json(result);
 });
+
+app.get('/api/breakdown', async (req, res) => res.json(await breakdown(req.query.segment)));
 
 app.post('/api/delete', async (req, res) => {
   const result = await deleteItems(req.body.items);

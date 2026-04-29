@@ -19,6 +19,10 @@ const api = {
       body: JSON.stringify({ items }),
     })).json();
   },
+  async breakdown(segment) {
+    if (window.diskCleaner) return window.diskCleaner.breakdown(segment);
+    return (await fetch('/api/breakdown?segment=' + encodeURIComponent(segment))).json();
+  },
 };
 
 let scanData = null;
@@ -127,7 +131,9 @@ function renderStorageOverview(disk, categories, overview) {
     el.className = 'storage-segment';
     el.style.width = pct + '%';
     el.style.background = seg.color;
+    el.style.cursor = 'pointer';
     el.innerHTML = `<div class="segment-tooltip">${seg.name}: ${formatSize(seg.size)}</div>`;
+    el.addEventListener('click', () => showBreakdown(seg.name, seg.color));
     bar.appendChild(el);
   }
 
@@ -138,13 +144,63 @@ function renderStorageOverview(disk, categories, overview) {
   for (const item of breakdownItems) {
     const el = document.createElement('div');
     el.className = 'breakdown-item';
+    el.style.cursor = item.border ? 'default' : 'pointer';
     const borderStyle = item.border ? 'border:1.5px solid var(--border-hi);' : '';
     el.innerHTML = `
       <span class="breakdown-dot" style="background:${item.color};${borderStyle}"></span>
       <span class="breakdown-name">${item.name}</span>
       <span class="breakdown-size">${formatSize(item.size)}</span>
     `;
+    if (!item.border) {
+      el.addEventListener('click', () => showBreakdown(item.name, item.color));
+    }
     breakdown.appendChild(el);
+  }
+}
+
+/* ========== Breakdown Panel ========== */
+
+async function showBreakdown(segmentName, color) {
+  if (segmentName === 'Developer Cache') {
+    const list = document.querySelector('.categories-list');
+    if (list) list.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return;
+  }
+
+  const panel = $('breakdown-panel');
+  const title = $('breakdown-title');
+  const loading = $('breakdown-loading');
+  const list = $('breakdown-list');
+
+  title.textContent = segmentName;
+  list.innerHTML = '';
+  loading.classList.add('visible');
+  panel.classList.add('open');
+
+  try {
+    const items = await api.breakdown(segmentName);
+    loading.classList.remove('visible');
+
+    if (!items || items.length === 0) {
+      list.innerHTML = '<div class="bd-item"><span class="bd-name" style="color:var(--text-mute)">No details available</span></div>';
+      return;
+    }
+
+    const maxSize = items[0].size;
+    items.forEach(item => {
+      const pct = Math.max(2, (item.size / maxSize) * 100);
+      const el = document.createElement('div');
+      el.className = 'bd-item';
+      el.innerHTML = `
+        <span class="bd-name" title="${item.path || item.name}">${item.group ? item.group + '/' : ''}${item.name}</span>
+        <div class="bd-bar-track"><div class="bd-bar-fill" style="width:${pct}%;background:${color}"></div></div>
+        <span class="bd-size">${formatSize(item.size)}</span>
+      `;
+      list.appendChild(el);
+    });
+  } catch (e) {
+    loading.classList.remove('visible');
+    list.innerHTML = '<div class="bd-item"><span class="bd-name" style="color:var(--red)">Error loading breakdown</span></div>';
   }
 }
 
@@ -493,6 +549,7 @@ $('btn-delete').addEventListener('click', () => deleteSelected());
 $('btn-cancel').addEventListener('click', () => closeModal());
 $('btn-confirm').addEventListener('click', () => confirmDelete());
 $('btn-progress-done').addEventListener('click', () => closeProgress());
+$('breakdown-close').addEventListener('click', () => $('breakdown-panel').classList.remove('open'));
 
 $('categories-list').addEventListener('click', e => {
   const header = e.target.closest('[data-cat-toggle]');

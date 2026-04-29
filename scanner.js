@@ -492,4 +492,77 @@ async function deleteItems(items) {
   return { results };
 }
 
-module.exports = { getDiskInfo, scan, browse, deleteItems, isAllowedPath, HOME };
+async function breakdown(segment) {
+  const measure = async (entries) => {
+    const results = await Promise.all(entries.map(async (e) => {
+      const size = await getDirSize(e.path);
+      return { ...e, size };
+    }));
+    return results.filter(i => i.size > 1024 * 1024).sort((a, b) => b.size - a.size);
+  };
+
+  switch (segment) {
+    case 'Applications': {
+      try {
+        const entries = fs.readdirSync('/Applications', { withFileTypes: true })
+          .filter(e => e.isDirectory())
+          .map(e => ({ name: e.name.replace(/\.app$/, ''), path: path.join('/Applications', e.name) }));
+        return await measure(entries);
+      } catch { return []; }
+    }
+    case 'Projects': {
+      const bases = [
+        path.join(HOME, 'artron'),
+        path.join(HOME, 'my-project'),
+        path.join(HOME, 'development'),
+        path.join(HOME, 'ghq'),
+      ].filter(p => fs.existsSync(p));
+      const entries = [];
+      for (const base of bases) {
+        try {
+          const subs = fs.readdirSync(base, { withFileTypes: true })
+            .filter(e => e.isDirectory() && !e.name.startsWith('.'))
+            .map(e => ({ name: e.name, path: path.join(base, e.name), group: path.basename(base) }));
+          entries.push(...subs);
+        } catch {}
+      }
+      return await measure(entries);
+    }
+    case 'macOS': {
+      const disk = getDiskInfo();
+      const entries = [
+        { name: 'System Volume', path: '__static__', size: disk.macOSSize },
+        { name: '/Library', path: '/Library' },
+        { name: '/private/var', path: '/private/var' },
+      ];
+      const results = await Promise.all(entries.map(async (e) => {
+        if (e.size) return e;
+        const size = await getDirSize(e.path);
+        return { ...e, size };
+      }));
+      return results.filter(i => i.size > 0).sort((a, b) => b.size - a.size);
+    }
+    case 'System Data': {
+      const entries = [];
+      try {
+        const libSubs = fs.readdirSync(path.join(HOME, 'Library'), { withFileTypes: true })
+          .filter(e => e.isDirectory())
+          .map(e => ({ name: '~/Library/' + e.name, path: path.join(HOME, 'Library', e.name) }));
+        entries.push(...libSubs);
+      } catch {}
+      try {
+        const dotfiles = fs.readdirSync(HOME, { withFileTypes: true })
+          .filter(e => e.isDirectory() && e.name.startsWith('.') && e.name !== '.Trash')
+          .map(e => ({ name: '~/' + e.name, path: path.join(HOME, e.name) }));
+        entries.push(...dotfiles);
+      } catch {}
+      return await measure(entries);
+    }
+    case 'Developer Cache':
+      return null;
+    default:
+      return [];
+  }
+}
+
+module.exports = { getDiskInfo, scan, browse, deleteItems, breakdown, isAllowedPath, HOME };
