@@ -1,0 +1,31 @@
+{
+  "name": "disk-cleaner",
+  "version": "1.0.0",
+  "description": "Mac Disk Space Manager - DaisyDisk style",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "node server.js",
+    "dist": "electron-builder --mac"
+  },
+  "dependencies": {
+    "express": "^4.21.0"
+  },
+  "devDependencies": {
+    "electron": "^35.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "com.diskcleaner.app",
+    "productName": "Disk Cleaner",
+    "mac": {
+      "category": "public.app-category.utilities",
+      "target": "dmg"
+    },
+    "files": [
+      "electron/**/*",
+      "public/**/*",
+      "scanner.js"
+    ]
+  }
+}
