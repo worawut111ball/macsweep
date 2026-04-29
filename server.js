@@ -25,5 +25,5 @@ app.post('/api/delete', async (req, res) => {
 });
 
 app.listen(PORT, '127.0.0.1', () => {
-  console.log(`\n  🧹 Disk Cleaner (dev)\n  📍 http://localhost:${PORT}\n`);
+  console.log(`\n  🧹 MacSweep (dev)\n  📍 http://localhost:${PORT}\n`);
 });

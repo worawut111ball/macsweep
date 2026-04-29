@@ -1,5 +1,5 @@
 {
-  "name": "disk-cleaner",
+  "name": "macsweep",
   "version": "1.0.0",
   "description": "Mac Disk Space Manager - DaisyDisk style",
   "main": "electron/main.js",
@@ -16,8 +16,8 @@
     "electron-builder": "^26.0.0"
   },
   "build": {
-    "appId": "com.diskcleaner.app",
-    "productName": "Disk Cleaner",
+    "appId": "com.macsweep.app",
+    "productName": "MacSweep",
     "mac": {
       "category": "public.app-category.utilities",
       "target": "dmg"

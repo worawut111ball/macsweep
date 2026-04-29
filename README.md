@@ -1,1 +1,1 @@
-# disk-cleaner
+# MacSweep
