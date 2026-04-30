@@ -1,6 +1,6 @@
 const { app, BrowserWindow, ipcMain, Menu, shell } = require('electron');
 const path = require('path');
-const { getDiskInfo, scan, browse, deleteItems, breakdown } = require('../scanner');
+const { getDiskInfo, scan, browse, deleteItems, breakdown, findLargeFiles } = require('../scanner');
 
 let mainWindow;
 
@@ -97,6 +97,7 @@ ipcMain.handle('disk:scan', () => scan());
 ipcMain.handle('disk:browse', (_event, dirPath) => browse(dirPath));
 ipcMain.handle('disk:delete', (_event, items) => deleteItems(items));
 ipcMain.handle('disk:breakdown', (_event, segment) => breakdown(segment));
+ipcMain.handle('disk:findLargeFiles', (_event, minMB) => findLargeFiles(minMB));
 
 ipcMain.handle('shell:showInFinder', (_event, itemPath) => {
   shell.showItemInFolder(itemPath);

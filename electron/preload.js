@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('diskCleaner', {
   browse: (dirPath) => ipcRenderer.invoke('disk:browse', dirPath),
   deleteItems: (items) => ipcRenderer.invoke('disk:delete', items),
   breakdown: (segment) => ipcRenderer.invoke('disk:breakdown', segment),
+  findLargeFiles: (minMB) => ipcRenderer.invoke('disk:findLargeFiles', minMB),
   showInFinder: (itemPath) => ipcRenderer.invoke('shell:showInFinder', itemPath),
   onMenuScan: (callback) => ipcRenderer.on('menu:scan', callback),
 });

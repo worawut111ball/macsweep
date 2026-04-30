@@ -23,6 +23,13 @@ const api = {
     if (window.diskCleaner) return window.diskCleaner.breakdown(segment);
     return (await fetch('/api/breakdown?segment=' + encodeURIComponent(segment))).json();
   },
+  async findLargeFiles(minMB) {
+    if (window.diskCleaner) return window.diskCleaner.findLargeFiles(minMB);
+    return (await fetch('/api/large-files?min=' + (minMB || 100))).json();
+  },
+  showInFinder(itemPath) {
+    if (window.diskCleaner) window.diskCleaner.showInFinder(itemPath);
+  },
 };
 
 let scanData = null;
@@ -158,7 +165,139 @@ function renderStorageOverview(disk, categories, overview) {
   }
 }
 
-/* ========== Breakdown Panel ========== */
+/* ========== Breakdown Panel (drill-down + delete) ========== */
+
+let bdHistory = [];
+let bdColor = '#3b82f6';
+let bdSelectedItems = new Map();
+let bdSortMode = 'size';
+
+function bdUpdateActionBar() {
+  const bar = $('bd-action-bar');
+  if (bdSelectedItems.size === 0) {
+    bar.classList.remove('visible');
+    return;
+  }
+  bar.classList.add('visible');
+  let total = 0;
+  bdSelectedItems.forEach(v => total += v.size);
+  $('bd-selected-size').textContent = formatSize(total);
+  $('bd-selected-count').textContent = bdSelectedItems.size;
+}
+
+function bdRenderBreadcrumb() {
+  const bc = $('bd-breadcrumb');
+  bc.innerHTML = '';
+  bdHistory.forEach((entry, i) => {
+    if (i > 0) {
+      const sep = document.createElement('span');
+      sep.className = 'bd-bc-sep';
+      sep.textContent = '›';
+      bc.appendChild(sep);
+    }
+    const el = document.createElement('span');
+    el.className = 'bd-bc-item' + (i === bdHistory.length - 1 ? ' active' : '');
+    el.textContent = entry.label;
+    if (i < bdHistory.length - 1) {
+      el.style.cursor = 'pointer';
+      el.addEventListener('click', () => {
+        bdHistory = bdHistory.slice(0, i + 1);
+        bdSelectedItems.clear();
+        bdUpdateActionBar();
+        bdRenderItems(entry.items, entry.label);
+        bdRenderBreadcrumb();
+      });
+    }
+    bc.appendChild(el);
+  });
+}
+
+function bdSortItems(items) {
+  const sorted = [...items];
+  if (bdSortMode === 'name') sorted.sort((a, b) => a.name.localeCompare(b.name));
+  else sorted.sort((a, b) => b.size - a.size);
+  return sorted;
+}
+
+function bdRenderItems(items, title) {
+  const list = $('breakdown-list');
+  list.innerHTML = '';
+
+  if (!items || items.length === 0) {
+    list.innerHTML = '<div class="bd-item"><span class="bd-name" style="color:var(--text-mute)">ไม่มีข้อมูล</span></div>';
+    return;
+  }
+
+  const sorted = bdSortItems(items);
+  const maxSize = Math.max(...sorted.map(i => i.size));
+
+  sorted.forEach(item => {
+    const pct = Math.max(2, (item.size / maxSize) * 100);
+    const canDrill = item.isDir !== false && item.path && !item.path.startsWith('__');
+    const el = document.createElement('div');
+    el.className = 'bd-item' + (canDrill ? ' bd-drillable' : '');
+
+    const isChecked = bdSelectedItems.has(item.path);
+    const canDelete = item.deletable === true;
+    const hasPath = item.path && !item.path.startsWith('__');
+
+    el.innerHTML = `
+      ${canDelete ? `<input type="checkbox" class="bd-check" data-path="${item.path}" data-size="${item.size}" ${isChecked ? 'checked' : ''}>` : '<span style="width:16px"></span>'}
+      <span class="bd-name" title="${item.path || item.name}">${item.group ? item.group + '/' : ''}${item.name}${item.isDir !== false && canDrill ? ' /' : ''}</span>
+      <div class="bd-bar-track"><div class="bd-bar-fill" style="width:${pct}%;background:${bdColor}"></div></div>
+      <span class="bd-size">${formatSize(item.size)}</span>
+      ${canDrill ? '<span class="bd-drill-icon">›</span>' : ''}
+      ${hasPath ? '<button class="bd-finder-btn" title="Show in Finder">⌕</button>' : ''}
+    `;
+
+    if (canDrill) {
+      el.querySelector('.bd-name').addEventListener('click', () => drillInto(item));
+      const drillIcon = el.querySelector('.bd-drill-icon');
+      if (drillIcon) drillIcon.addEventListener('click', () => drillInto(item));
+    }
+
+    const checkbox = el.querySelector('.bd-check');
+    if (checkbox) {
+      checkbox.addEventListener('change', (e) => {
+        if (e.target.checked) bdSelectedItems.set(item.path, { size: item.size });
+        else bdSelectedItems.delete(item.path);
+        bdUpdateActionBar();
+      });
+    }
+
+    const finderBtn = el.querySelector('.bd-finder-btn');
+    if (finderBtn) {
+      finderBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        api.showInFinder(item.path);
+      });
+    }
+
+    list.appendChild(el);
+  });
+}
+
+async function drillInto(item) {
+  const loading = $('breakdown-loading');
+  const list = $('breakdown-list');
+  loading.classList.add('visible');
+
+  try {
+    const result = await api.browse(item.path);
+    loading.classList.remove('visible');
+    if (result.error) {
+      list.innerHTML = `<div class="bd-item"><span class="bd-name" style="color:var(--red)">${result.error}</span></div>`;
+      return;
+    }
+    const children = (result.children || []).map(c => ({ ...c, isDir: c.isDir, deletable: c.deletable }));
+    bdHistory.push({ label: item.name, items: children });
+    bdRenderBreadcrumb();
+    bdRenderItems(children, item.name);
+  } catch (e) {
+    loading.classList.remove('visible');
+    list.innerHTML = '<div class="bd-item"><span class="bd-name" style="color:var(--red)">Error loading</span></div>';
+  }
+}
 
 async function showBreakdown(segmentName, color) {
   if (segmentName === 'Developer Cache') {
@@ -167,13 +306,16 @@ async function showBreakdown(segmentName, color) {
     return;
   }
 
-  const panel = $('breakdown-panel');
-  const title = $('breakdown-title');
-  const loading = $('breakdown-loading');
-  const list = $('breakdown-list');
+  bdColor = color;
+  bdHistory = [];
+  bdSelectedItems.clear();
+  bdUpdateActionBar();
 
-  title.textContent = segmentName;
-  list.innerHTML = '';
+  const panel = $('breakdown-panel');
+  const loading = $('breakdown-loading');
+
+  $('breakdown-title').textContent = segmentName;
+  $('breakdown-list').innerHTML = '';
   loading.classList.add('visible');
   panel.classList.add('open');
 
@@ -181,26 +323,127 @@ async function showBreakdown(segmentName, color) {
     const items = await api.breakdown(segmentName);
     loading.classList.remove('visible');
 
-    if (!items || items.length === 0) {
-      list.innerHTML = '<div class="bd-item"><span class="bd-name" style="color:var(--text-mute)">No details available</span></div>';
-      return;
-    }
-
-    const maxSize = items[0].size;
-    items.forEach(item => {
-      const pct = Math.max(2, (item.size / maxSize) * 100);
-      const el = document.createElement('div');
-      el.className = 'bd-item';
-      el.innerHTML = `
-        <span class="bd-name" title="${item.path || item.name}">${item.group ? item.group + '/' : ''}${item.name}</span>
-        <div class="bd-bar-track"><div class="bd-bar-fill" style="width:${pct}%;background:${color}"></div></div>
-        <span class="bd-size">${formatSize(item.size)}</span>
-      `;
-      list.appendChild(el);
-    });
+    const enriched = (items || []).map(i => ({ ...i, isDir: i.path && !i.path.startsWith('__') }));
+    bdHistory = [{ label: segmentName, items: enriched }];
+    bdRenderBreadcrumb();
+    bdRenderItems(enriched, segmentName);
   } catch (e) {
     loading.classList.remove('visible');
-    list.innerHTML = '<div class="bd-item"><span class="bd-name" style="color:var(--red)">Error loading breakdown</span></div>';
+    $('breakdown-list').innerHTML = '<div class="bd-item"><span class="bd-name" style="color:var(--red)">Error loading breakdown</span></div>';
+  }
+}
+
+async function bdDeleteSelected() {
+  if (bdSelectedItems.size === 0) return;
+  let total = 0;
+  bdSelectedItems.forEach(v => total += v.size);
+
+  $('modal-text').innerHTML =
+    `Delete <strong>${bdSelectedItems.size}</strong> items totaling <strong>${formatSize(total)}</strong>?<br><span style="color:var(--text-mute)">This cannot be undone.</span>`;
+  $('modal-overlay').classList.add('visible');
+
+  $('btn-confirm').onclick = async () => {
+    closeModal();
+    const items = [...bdSelectedItems.keys()];
+
+    const overlay = $('progress-overlay');
+    const itemsEl = $('progress-items');
+    const fill = $('progress-fill');
+    const summary = $('progress-summary');
+    const doneBtn = $('btn-progress-done');
+    const title = $('progress-title');
+
+    title.textContent = `Deleting ${items.length} items...`;
+    fill.style.width = '0%';
+    fill.style.background = '';
+    summary.textContent = '';
+    doneBtn.style.display = 'none';
+
+    itemsEl.innerHTML = items.map((p, i) => `
+      <div class="progress-item" id="pi-${i}">
+        <span class="pi-icon pending">○</span>
+        <span class="pi-name" title="${p}">${p.replace(/^\/Users\/[^/]+/, '~')}</span>
+        <span class="pi-status">...</span>
+      </div>
+    `).join('');
+    overlay.classList.add('visible');
+
+    let freedTotal = 0, errorCount = 0;
+    for (let i = 0; i < items.length; i++) {
+      const el = $('pi-' + i);
+      const icon = el.querySelector('.pi-icon');
+      const status = el.querySelector('.pi-status');
+      icon.className = 'pi-icon active'; icon.textContent = '↻';
+
+      try {
+        const result = await api.deleteItems([items[i]]);
+        const r = result.results?.[0];
+        if (r?.success) {
+          icon.className = 'pi-icon done'; icon.textContent = '✓';
+          freedTotal += bdSelectedItems.get(items[i])?.size || 0;
+        } else {
+          icon.className = 'pi-icon error'; icon.textContent = '✗';
+          status.className = 'pi-status error'; status.textContent = r?.error || 'Failed';
+          errorCount++;
+        }
+      } catch (e) {
+        icon.className = 'pi-icon error'; icon.textContent = '✗';
+        status.className = 'pi-status error'; status.textContent = e.message;
+        errorCount++;
+      }
+      fill.style.width = ((i + 1) / items.length * 100) + '%';
+      summary.textContent = `Freed ${formatSize(freedTotal)}` + (errorCount ? ` — ${errorCount} failed` : '');
+    }
+
+    title.textContent = errorCount
+      ? `Done — ${items.length - errorCount} deleted, ${errorCount} failed`
+      : `Done — freed ${formatSize(freedTotal)}`;
+    fill.style.background = errorCount ? 'var(--orange)' : 'var(--green)';
+    doneBtn.style.display = 'inline-block';
+
+    bdSelectedItems.clear();
+    bdUpdateActionBar();
+
+    $('btn-confirm').onclick = () => confirmDelete();
+  };
+}
+
+/* ========== Large Files ========== */
+
+let largeFilesData = [];
+
+async function showLargeFiles() {
+  const panel = $('breakdown-panel');
+  const loading = $('breakdown-loading');
+
+  bdColor = '#FF6B6B';
+  bdHistory = [];
+  bdSelectedItems.clear();
+  bdUpdateActionBar();
+
+  $('breakdown-title').textContent = 'Large Files (>100 MB)';
+  $('breakdown-list').innerHTML = '';
+  loading.classList.add('visible');
+  panel.classList.add('open');
+
+  try {
+    largeFilesData = await api.findLargeFiles(100);
+    loading.classList.remove('visible');
+
+    const items = largeFilesData.map(f => ({
+      name: f.name,
+      path: f.path,
+      size: f.size,
+      isDir: false,
+      group: f.dir,
+    }));
+
+    bdHistory = [{ label: 'Large Files', items }];
+    bdRenderBreadcrumb();
+    bdRenderItems(items, 'Large Files');
+  } catch (e) {
+    loading.classList.remove('visible');
+    $('breakdown-list').innerHTML = '<div class="bd-item"><span class="bd-name" style="color:var(--red)">Error scanning</span></div>';
   }
 }
 
@@ -440,6 +683,122 @@ function updateActionBar() {
   $('selected-count').textContent = selectedItems.size;
 }
 
+/* ========== Auto Clean ========== */
+
+const AUTO_CLEAN_IDS = new Set([
+  'next_cache', 'npm_cache', 'brew_cache', 'pip_cache',
+  'generic_cache', 'chrome_cache', 'discord_cache',
+  'ai_tools', 'zed_cache', 'bun_dart', 'logs', 'misc_cache', 'trash',
+  'playwright',
+]);
+
+function autoClean() {
+  if (!scanData) { showToast('Scan first'); return; }
+
+  const safeItems = [];
+  for (const cat of scanData.categories) {
+    if (!AUTO_CLEAN_IDS.has(cat.id)) continue;
+    for (const item of cat.items) {
+      if (item.size > 0) safeItems.push({ path: item.path, size: item.size, cat: cat.name });
+    }
+  }
+
+  if (safeItems.length === 0) { showToast('Nothing to clean'); return; }
+
+  let totalSize = safeItems.reduce((s, i) => s + i.size, 0);
+
+  const grouped = {};
+  for (const item of safeItems) {
+    if (!grouped[item.cat]) grouped[item.cat] = { count: 0, size: 0 };
+    grouped[item.cat].count++;
+    grouped[item.cat].size += item.size;
+  }
+  const breakdown = Object.entries(grouped)
+    .sort((a, b) => b[1].size - a[1].size)
+    .map(([name, info]) => `<div class="ac-row"><span class="ac-cat">${name}</span><span class="ac-info">${info.count} items · ${formatSize(info.size)}</span></div>`)
+    .join('');
+
+  $('modal-text').innerHTML = `
+    <div style="margin-bottom:10px">ล้าง cache <strong>${safeItems.length}</strong> รายการ รวม <strong>${formatSize(totalSize)}</strong></div>
+    <div class="ac-breakdown">${breakdown}</div>
+    <div style="margin-top:10px;color:var(--text-mute);font-size:11px">ลบเฉพาะ cache ที่ระบบสร้างใหม่ได้เอง — ไม่แตะ node_modules, Docker, nvm, Xcode, PlatformIO</div>
+  `;
+  $('modal-overlay').classList.add('visible');
+
+  $('btn-confirm').onclick = async () => {
+    closeModal();
+
+    const items = safeItems.map(i => ({
+      path: i.path,
+      size: i.size,
+      name: i.path.replace(/^\/Users\/[^/]+/, '~'),
+    }));
+
+    const overlay = $('progress-overlay');
+    const itemsEl = $('progress-items');
+    const fill = $('progress-fill');
+    const summary = $('progress-summary');
+    const doneBtn = $('btn-progress-done');
+    const title = $('progress-title');
+
+    title.textContent = `Auto cleaning ${items.length} items...`;
+    fill.style.width = '0%';
+    fill.style.background = '';
+    summary.textContent = '';
+    doneBtn.style.display = 'none';
+
+    itemsEl.innerHTML = items.map((item, i) => `
+      <div class="progress-item" id="pi-${i}">
+        <span class="pi-icon pending">○</span>
+        <span class="pi-name" title="${item.name}">${item.name}</span>
+        <span class="pi-status">${formatSize(item.size)}</span>
+      </div>
+    `).join('');
+
+    overlay.classList.add('visible');
+
+    let freedTotal = 0, errorCount = 0;
+    for (let i = 0; i < items.length; i++) {
+      const el = $('pi-' + i);
+      const icon = el.querySelector('.pi-icon');
+      const status = el.querySelector('.pi-status');
+
+      icon.className = 'pi-icon active'; icon.textContent = '↻';
+      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+      try {
+        const result = await api.deleteItems([items[i].path]);
+        const r = result.results?.[0];
+        if (r?.success) {
+          icon.className = 'pi-icon done'; icon.textContent = '✓';
+          freedTotal += items[i].size;
+        } else {
+          icon.className = 'pi-icon error'; icon.textContent = '✗';
+          status.className = 'pi-status error'; status.textContent = r?.error || 'Failed';
+          errorCount++;
+        }
+      } catch (e) {
+        icon.className = 'pi-icon error'; icon.textContent = '✗';
+        status.className = 'pi-status error'; status.textContent = e.message;
+        errorCount++;
+      }
+
+      fill.style.width = ((i + 1) / items.length * 100) + '%';
+      summary.textContent = `Freed ${formatSize(freedTotal)}` + (errorCount ? ` — ${errorCount} failed` : '');
+    }
+
+    title.textContent = errorCount
+      ? `Done — ${items.length - errorCount} deleted, ${errorCount} failed`
+      : `Auto clean done — freed ${formatSize(freedTotal)}`;
+    fill.style.background = errorCount ? 'var(--orange)' : 'var(--green)';
+    doneBtn.style.display = 'inline-block';
+
+    selectedItems.clear();
+    updateActionBar();
+    $('btn-confirm').onclick = () => confirmDelete();
+  };
+}
+
 /* ========== Delete with per-item progress ========== */
 
 function deleteSelected() {
@@ -546,10 +905,19 @@ async function closeProgress() {
 
 $('btn-scan').addEventListener('click', () => scan());
 $('btn-delete').addEventListener('click', () => deleteSelected());
-$('btn-cancel').addEventListener('click', () => closeModal());
+$('btn-cancel').addEventListener('click', () => { closeModal(); $('btn-confirm').onclick = () => confirmDelete(); });
 $('btn-confirm').addEventListener('click', () => confirmDelete());
 $('btn-progress-done').addEventListener('click', () => closeProgress());
-$('breakdown-close').addEventListener('click', () => $('breakdown-panel').classList.remove('open'));
+$('breakdown-close').addEventListener('click', () => { $('breakdown-panel').classList.remove('open'); bdSelectedItems.clear(); bdUpdateActionBar(); });
+$('bd-btn-delete').addEventListener('click', () => bdDeleteSelected());
+$('btn-large-files').addEventListener('click', () => showLargeFiles());
+$('btn-auto-clean').addEventListener('click', () => autoClean());
+$('bd-sort-toggle').addEventListener('click', () => {
+  bdSortMode = bdSortMode === 'size' ? 'name' : 'size';
+  $('bd-sort-toggle').textContent = bdSortMode === 'size' ? '↓ Size' : 'A→Z';
+  const current = bdHistory[bdHistory.length - 1];
+  if (current) bdRenderItems(current.items, current.label);
+});
 
 $('categories-list').addEventListener('click', e => {
   const header = e.target.closest('[data-cat-toggle]');

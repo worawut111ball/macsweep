@@ -32,10 +32,32 @@ const ALLOWED_PREFIXES = [
   path.join(HOME, 'Library', 'Application Support', 'Zed', 'hang_traces'),
 ];
 
+const BROWSE_PREFIXES = [
+  '/Applications',
+  path.join(HOME, 'Applications'),
+  path.join(HOME, 'Library'),
+  path.join(HOME, 'Documents'),
+  path.join(HOME, 'Downloads'),
+  path.join(HOME, 'Desktop'),
+  path.join(HOME, 'Pictures'),
+  path.join(HOME, 'Music'),
+  path.join(HOME, 'Movies'),
+  '/Library',
+  '/private/var',
+];
+
 function isAllowedPath(target) {
   const resolved = path.resolve(target);
   if (!resolved.startsWith(HOME + path.sep) && resolved !== HOME) return false;
   return ALLOWED_PREFIXES.some(prefix => resolved === prefix || resolved.startsWith(prefix + path.sep));
+}
+
+function isBrowsablePath(target) {
+  const resolved = path.resolve(target);
+  const allPrefixes = [...BROWSE_PREFIXES, ...ALLOWED_PREFIXES];
+  return allPrefixes.some(
+    prefix => resolved === prefix || resolved.startsWith(prefix + path.sep)
+  );
 }
 
 function getDiskInfo() {
@@ -421,7 +443,7 @@ async function scan() {
 
 async function browse(dirPath) {
   const resolved = path.resolve(dirPath);
-  if (!isAllowedPath(resolved)) {
+  if (!isBrowsablePath(resolved)) {
     return { error: 'Path not in allowed scope' };
   }
   if (!fs.existsSync(resolved)) {
@@ -431,7 +453,11 @@ async function browse(dirPath) {
     getChildSizes(resolved),
     getDirSize(resolved),
   ]);
-  return { path: resolved, total, children };
+  const enriched = children.map(c => ({
+    ...c,
+    deletable: isAllowedPath(c.path),
+  }));
+  return { path: resolved, total, children: enriched, deletable: isAllowedPath(resolved) };
 }
 
 async function deleteItems(items) {
@@ -496,7 +522,7 @@ async function breakdown(segment) {
   const measure = async (entries) => {
     const results = await Promise.all(entries.map(async (e) => {
       const size = await getDirSize(e.path);
-      return { ...e, size };
+      return { ...e, size, deletable: isAllowedPath(e.path) };
     }));
     return results.filter(i => i.size > 1024 * 1024).sort((a, b) => b.size - a.size);
   };
@@ -565,4 +591,61 @@ async function breakdown(segment) {
   }
 }
 
-module.exports = { getDiskInfo, scan, browse, deleteItems, breakdown, isAllowedPath, HOME };
+async function findLargeFiles(minMB = 100) {
+  const minBytes = minMB * 1024 * 1024;
+  const searchPaths = [
+    HOME,
+  ];
+  const skipPatterns = ['node_modules', '.git', '.Trash', 'Library/Mail', 'Photos Library.photoslibrary'];
+
+  const allFiles = [];
+  for (const base of searchPaths) {
+    try {
+      const pruneArgs = skipPatterns
+        .map(p => ['-name', p, '-prune', '-o'])
+        .flat();
+      const args = [base, '-maxdepth', '6', ...pruneArgs, '-type', 'f', '-size', `+${minMB}M`, '-print0'];
+      const { stdout } = await execFile('find', args, { timeout: 30000 });
+      const files = stdout.split('\0').filter(Boolean);
+      for (const f of files) {
+        try {
+          const stat = fs.statSync(f);
+          allFiles.push({
+            name: path.basename(f),
+            path: f,
+            size: stat.size,
+            ext: path.extname(f).toLowerCase(),
+            dir: path.dirname(f).replace(HOME, '~'),
+            modified: stat.mtime.toISOString(),
+            deletable: isAllowedPath(f),
+          });
+        } catch {}
+      }
+    } catch (e) {
+      if (e.stdout) {
+        const files = e.stdout.split('\0').filter(Boolean);
+        for (const f of files) {
+          try {
+            const stat = fs.statSync(f);
+            allFiles.push({
+              name: path.basename(f),
+              path: f,
+              size: stat.size,
+              ext: path.extname(f).toLowerCase(),
+              dir: path.dirname(f).replace(HOME, '~'),
+              modified: stat.mtime.toISOString(),
+              deletable: isAllowedPath(f),
+            });
+          } catch {}
+        }
+      }
+    }
+  }
+
+  return allFiles
+    .filter(f => f.size >= minBytes)
+    .sort((a, b) => b.size - a.size)
+    .slice(0, 100);
+}
+
+module.exports = { getDiskInfo, scan, browse, deleteItems, breakdown, findLargeFiles, isAllowedPath, HOME };

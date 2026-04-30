@@ -1,6 +1,6 @@
 const express = require('express');
 const path = require('path');
-const { getDiskInfo, scan, browse, deleteItems, breakdown } = require('./scanner');
+const { getDiskInfo, scan, browse, deleteItems, breakdown, findLargeFiles } = require('./scanner');
 
 const app = express();
 const PORT = 3456;
@@ -19,6 +19,11 @@ app.get('/api/browse', async (req, res) => {
 });
 
 app.get('/api/breakdown', async (req, res) => res.json(await breakdown(req.query.segment)));
+
+app.get('/api/large-files', async (req, res) => {
+  const minMB = parseInt(req.query.min) || 100;
+  res.json(await findLargeFiles(minMB));
+});
 
 app.post('/api/delete', async (req, res) => {
   const result = await deleteItems(req.body.items);

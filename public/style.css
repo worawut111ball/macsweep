@@ -201,6 +201,70 @@ h1 {
   font-variant-numeric: tabular-nums;
 }
 
+/* — Header buttons — */
+.header-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+}
+.btn-auto-clean {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 16px;
+  background: linear-gradient(135deg, var(--green), #2dd4bf);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.25s;
+}
+.btn-auto-clean:hover { filter: brightness(1.15); transform: translateY(-1px); box-shadow: 0 4px 16px rgba(52,211,153,0.3); }
+.btn-auto-clean:active { transform: translateY(0); }
+
+/* — Auto clean breakdown in modal — */
+.ac-breakdown {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+.ac-breakdown::-webkit-scrollbar { width: 3px; }
+.ac-breakdown::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 2px; }
+.ac-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.ac-row:last-child { border-bottom: none; }
+.ac-cat { color: var(--text); font-weight: 500; }
+.ac-info { color: var(--text-dim); font-size: 11px; font-variant-numeric: tabular-nums; }
+
+.btn-large-files {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 16px;
+  background: var(--bg-card);
+  color: var(--text-dim);
+  border: 1px solid var(--border-hi);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-large-files:hover { background: var(--bg-hover); color: var(--text); border-color: var(--accent); }
+
 /* — Breakdown panel — */
 .breakdown-panel {
   display: none;
@@ -232,6 +296,23 @@ h1 {
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
+.bd-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.bd-sort-btn {
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.bd-sort-btn:hover { color: var(--text); border-color: var(--border-hi); }
 .breakdown-close {
   background: none;
   border: none;
@@ -244,6 +325,27 @@ h1 {
 }
 .breakdown-close:hover { color: var(--text); }
 
+/* — Breadcrumb — */
+.bd-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 14px;
+  font-size: 11px;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.bd-breadcrumb:empty { display: none; }
+.bd-breadcrumb::-webkit-scrollbar { height: 0; }
+.bd-bc-item {
+  color: var(--accent-hi);
+  transition: color 0.15s;
+}
+.bd-bc-item:hover { color: var(--text); }
+.bd-bc-item.active { color: var(--text); cursor: default; }
+.bd-bc-sep { color: var(--text-mute); margin: 0 2px; }
+
 .breakdown-loading {
   display: none;
   padding: 16px;
@@ -254,7 +356,7 @@ h1 {
 .breakdown-loading.visible { display: block; }
 
 .breakdown-list {
-  max-height: 220px;
+  max-height: 300px;
   overflow-y: auto;
   padding: 4px 0;
 }
@@ -264,12 +366,21 @@ h1 {
 .bd-item {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   padding: 5px 14px;
   font-size: 12px;
   transition: background 0.1s;
 }
 .bd-item:hover { background: var(--bg-hover); }
+.bd-item.bd-drillable .bd-name { cursor: pointer; color: var(--accent-hi); }
+.bd-item.bd-drillable .bd-name:hover { color: var(--text); text-decoration: underline; }
+
+.bd-check {
+  width: 14px; height: 14px;
+  accent-color: var(--accent);
+  cursor: pointer;
+  flex-shrink: 0;
+}
 
 .bd-name {
   flex: 1;
@@ -280,7 +391,7 @@ h1 {
   min-width: 0;
 }
 .bd-bar-track {
-  width: 100px;
+  width: 80px;
   height: 4px;
   background: var(--bg-hover);
   border-radius: 2px;
@@ -293,7 +404,7 @@ h1 {
   transition: width 0.4s ease;
 }
 .bd-size {
-  width: 70px;
+  width: 65px;
   text-align: right;
   font-weight: 600;
   color: var(--text);
@@ -301,6 +412,57 @@ h1 {
   flex-shrink: 0;
   font-size: 11px;
 }
+.bd-drill-icon {
+  color: var(--text-mute);
+  font-size: 14px;
+  cursor: pointer;
+  flex-shrink: 0;
+  width: 14px;
+  text-align: center;
+  transition: color 0.15s;
+}
+.bd-drill-icon:hover { color: var(--accent); }
+.bd-finder-btn {
+  background: none;
+  border: none;
+  color: var(--text-mute);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0 2px;
+  flex-shrink: 0;
+  transition: color 0.15s;
+  line-height: 1;
+}
+.bd-finder-btn:hover { color: var(--accent); }
+
+/* — Breakdown action bar — */
+.bd-action-bar {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-subtle);
+}
+.bd-action-bar.visible { display: flex; }
+.bd-action-info {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-weight: 500;
+}
+.bd-action-info span { color: var(--text); font-weight: 700; }
+.bd-btn-delete {
+  padding: 5px 14px;
+  background: var(--red);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.bd-btn-delete:hover { filter: brightness(1.15); }
 
 /* — Main layout — */
 main {
